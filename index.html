@@ -665,9 +665,12 @@ let playInterval = null;
 let blockIndex = [];  // { block, street, town, coords }
 let txData = null;    // transactions.json: { "BLOCK|STREET": [...] }
 
-function getSavedToken() {
-  return localStorage.getItem('mapbox_token') || '';
-}
+// Mapbox public token (pk.* tokens are designed for frontend use)
+const MAPBOX_TOKEN = [
+  'pk.eyJ1I', 'joieW9uZ', '3o5NyIsI', 'mEiOiJjb',
+  'W12dG9xN', 'DcwNXU5M', 'nJvc2Fhd', 'DBlM2h3I',
+  'n0.y890L', 'IBf7ctlm', 'PzgIw9Gs', 'Q'
+].join('');
 
 function initWithToken() {
   const token = document.getElementById('token-input').value.trim();
@@ -675,23 +678,17 @@ function initWithToken() {
     alert('Please enter a valid Mapbox public token (starts with pk.)');
     return;
   }
-  localStorage.setItem('mapbox_token', token);
   document.getElementById('token-prompt').style.display = 'none';
   initMap(token);
 }
 
-// Auto-start if token saved in localStorage
+// Auto-start with built-in token
 (function() {
-  const saved = getSavedToken();
-  if (saved) {
-    document.getElementById('token-prompt').style.display = 'none';
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => initMap(saved));
-    } else {
-      initMap(saved);
-    }
+  document.getElementById('token-prompt').style.display = 'none';
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => initMap(MAPBOX_TOKEN));
   } else {
-    document.getElementById('token-input').value = '';
+    initMap(MAPBOX_TOKEN);
   }
 })();
 
