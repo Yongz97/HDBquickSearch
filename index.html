@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HDB Resale Price Heatmap</title>
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.css" rel="stylesheet" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  #map { position: absolute; inset: 0; }
+
+  /* Controls panel */
+  #controls {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 1;
+    background: rgba(255,255,255,0.95);
+    border-radius: 10px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+    max-width: 340px;
+    backdrop-filter: blur(8px);
+    transition: all 0.3s ease;
+  }
+  #controls.collapsed {
+    max-width: 48px;
+    padding: 10px;
+    overflow: hidden;
+  }
+  #controls.collapsed .controls-body { display: none; }
+  #controls.collapsed h2 { display: none; }
+  .controls-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #controls h2 {
+    font-size: 16px;
+    margin-bottom: 12px;
+    color: #1a1a2e;
+  }
+  #toggle-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1.5px solid #ddd;
+    background: #fff;
+    color: #555;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  #toggle-btn:hover { border-color: #e63946; color: #e63946; }
+
+  /* Mobile responsive */
+  @media (max-width: 600px) {
+    #controls {
+      max-width: calc(100vw - 60px);
+      max-height: 70vh;
+      overflow-y: auto;
+      padding: 12px 14px;
+    }
+    #controls h2 { font-size: 14px; margin-bottom: 8px; }
+    #month-display { font-size: 16px; }
+    #detail-panel { width: 100vw; }
+    #legend { bottom: 8px; left: 8px; padding: 6px 10px; }
+    .legend-bar { width: 140px; }
+  }
+
+  /* Search */
+  .search-section { margin-bottom: 14px; position: relative; }
+  .search-section label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #search-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px solid #ddd;
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  #search-input:focus { border-color: #e63946; }
+  #search-input::placeholder { color: #bbb; }
+  #search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    max-height: 220px;
+    overflow-y: auto;
+    display: none;
+    z-index: 10;
+  }
+  .search-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.1s;
+  }
+  .search-item:hover { background: #fef2f2; }
+  .search-item .street { font-weight: 600; color: #1a1a2e; }
+  .search-item .town { color: #888; font-size: 11px; }
+  .search-item:last-child { border-bottom: none; }
+
+  /* Slider */
+  .slider-section { margin-bottom: 14px; }
+  .slider-section label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #month-display {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-bottom: 6px;
+  }
+  #timeline {
+    width: 100%;
+    cursor: pointer;
+    accent-color: #e63946;
+  }
+  .slider-range {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #999;
+  }
+
+  /* Dual-thumb range slider */
+  .dual-slider {
+    position: relative;
+    height: 28px;
+    margin: 4px 0 2px;
+  }
+  .dual-slider input[type=range] {
+    position: absolute;
+    width: 100%;
+    top: 0;
+    height: 28px;
+    margin: 0;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    z-index: 2;
+  }
+  .dual-slider input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #e63946;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    cursor: pointer;
+    pointer-events: all;
+  }
+  .dual-slider input[type=range]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #e63946;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    cursor: pointer;
+    pointer-events: all;
+  }
+  .dual-slider .track {
+    position: absolute;
+    top: 12px;
+    left: 0;
+    right: 0;
+    height: 4px;
+    border-radius: 2px;
+    background: #ddd;
+  }
+  .dual-slider .track-fill {
+    position: absolute;
+    top: 12px;
+    height: 4px;
+    border-radius: 2px;
+    background: #e63946;
+  }
+  .range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #999;
+    margin-top: 0;
+  }
+  .range-display {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-bottom: 2px;
+  }
+
+  /* Filter checkboxes */
+  .filter-section { margin-bottom: 10px; }
+  .filter-section label.section-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1.5px solid #ddd;
+    background: #fff;
+    color: #555;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .chip.active {
+    border-color: #e63946;
+    background: #e63946;
+    color: #fff;
+  }
+
+  /* Stats */
+  #stats {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.6;
+    border-top: 1px solid #eee;
+    padding-top: 10px;
+  }
+  #stats strong { color: #1a1a2e; }
+
+  /* Legend */
+  #legend {
+    position: absolute;
+    bottom: 32px;
+    left: 12px;
+    z-index: 1;
+    background: rgba(255,255,255,0.95);
+    border-radius: 8px;
+    padding: 10px 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    backdrop-filter: blur(8px);
+  }
+  #legend .title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .legend-bar {
+    width: 200px;
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(to right, #313695, #4575b4, #74add1, #abd9e9, #fee090, #fdae61, #f46d43, #d73027, #a50026);
+  }
+  .legend-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #888;
+    margin-top: 3px;
+  }
+
+  /* Play button */
+  #play-btn {
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1.5px solid #e63946;
+    background: #fff;
+    color: #e63946;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  #play-btn.playing {
+    background: #e63946;
+    color: #fff;
+  }
+  .slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  /* Token prompt */
+  #token-prompt {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    background: rgba(26,26,46,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  #token-prompt .dialog {
+    background: #fff;
+    padding: 32px;
+    border-radius: 12px;
+    max-width: 420px;
+    text-align: center;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+  }
+  #token-prompt h2 { margin-bottom: 12px; color: #1a1a2e; }
+  #token-prompt p { font-size: 14px; color: #666; margin-bottom: 16px; line-height: 1.5; }
+  #token-prompt input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: monospace;
+    margin-bottom: 12px;
+  }
+  #token-prompt input:focus { outline: none; border-color: #e63946; }
+  #token-prompt button {
+    padding: 10px 28px;
+    border: none;
+    border-radius: 8px;
+    background: #e63946;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #token-prompt a { color: #e63946; }
+
+  /* Loading overlay */
+  #loading {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    background: rgba(26,26,46,0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+  }
+  #loading .spinner {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  #loading .spinner { animation: pulse 1.5s ease-in-out infinite; }
+
+  /* Detail panel */
+  #detail-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 420px;
+    max-width: 100vw;
+    background: rgba(255,255,255,0.97);
+    backdrop-filter: blur(8px);
+    z-index: 3;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.15);
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #detail-panel.open { transform: translateX(0); }
+  .detail-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .detail-header h3 {
+    font-size: 15px;
+    color: #1a1a2e;
+    margin-bottom: 2px;
+  }
+  .detail-header .subtitle {
+    font-size: 12px;
+    color: #888;
+  }
+  .detail-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: #888;
+    line-height: 1;
+    padding: 4px;
+  }
+  .detail-close:hover { color: #e63946; }
+  .detail-summary {
+    padding: 12px 20px;
+    background: #f8f8fa;
+    border-bottom: 1px solid #eee;
+    font-size: 12px;
+    color: #555;
+    flex-shrink: 0;
+  }
+  .detail-summary strong { color: #1a1a2e; }
+  .detail-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+  }
+  .tx-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  .tx-table thead {
+    position: sticky;
+    top: 0;
+    background: #f0f0f3;
+    z-index: 1;
+  }
+  .tx-table th {
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    font-size: 10px;
+    border-bottom: 2px solid #ddd;
+  }
+  .tx-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+  }
+  .tx-table tr:hover td { background: #fef8f8; }
+  .tx-price {
+    font-weight: 600;
+    color: #e63946;
+  }
+  .detail-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+  }
+
+  /* Vicinity section in detail panel */
+  .vicinity-section {
+    padding: 12px 20px;
+    border-top: 2px solid #eee;
+    flex-shrink: 0;
+  }
+  .vicinity-section h4 {
+    font-size: 11px;
+    font-weight: 600;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .vicinity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .vicinity-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .vicinity-item:hover { background: #f5f5f7; }
+  .vicinity-item .vi-label { color: #333; }
+  .vicinity-item .vi-price { font-weight: 600; color: #e63946; }
+  .vicinity-item .vi-count { color: #999; font-size: 10px; }
+
+  /* Month group headers in full history */
+  .month-header {
+    padding: 6px 10px;
+    background: #e8e8ec;
+    font-size: 11px;
+    font-weight: 700;
+    color: #1a1a2e;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  /* Hover tooltip */
+  #hover-tooltip {
+    position: absolute;
+    z-index: 4;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(6px);
+    border-radius: 8px;
+    padding: 10px 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    pointer-events: none;
+    display: none;
+    font-size: 12px;
+    line-height: 1.5;
+    max-width: 220px;
+  }
+  #hover-tooltip .tt-block { font-weight: 700; color: #1a1a2e; font-size: 13px; }
+  #hover-tooltip .tt-town { color: #888; font-size: 11px; }
+  #hover-tooltip .tt-price { color: #e63946; font-weight: 700; font-size: 16px; }
+  #hover-tooltip .tt-info { color: #666; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="token-prompt">
+  <div class="dialog">
+    <h2>Mapbox Access Token</h2>
+    <p>This app needs a Mapbox token to display the map.<br>
+    Get a free one at <a href="https://mapbox.com" target="_blank">mapbox.com</a></p>
+    <input id="token-input" type="text" placeholder="pk.eyJ1Ij..." />
+    <br>
+    <button onclick="initWithToken()">Start</button>
+  </div>
+</div>
+
+<div id="loading">
+  <div class="spinner">Loading HDB data...</div>
+</div>
+
+<div id="map"></div>
+<div id="hover-tooltip"></div>
+
+<div id="controls">
+  <div class="controls-header">
+    <h2>HDB Resale Prices</h2>
+    <button id="toggle-btn" onclick="toggleControls()" title="Minimize panel">&#x2212;</button>
+  </div>
+  <div class="controls-body">
+
+  <div class="search-section">
+    <label>Search Location</label>
+    <input id="search-input" type="text" placeholder="e.g. 510 Jelapang, Blk 123, Bedok..." autocomplete="off" />
+    <div id="search-results"></div>
+  </div>
+
+  <div class="slider-section">
+    <div class="slider-header">
+      <label>Timeline</label>
+      <button id="play-btn" onclick="togglePlay()">Play</button>
+    </div>
+    <div id="month-display" class="range-display">Jan 2017 – Mar 2026</div>
+    <div class="dual-slider" id="timeline-slider">
+      <div class="track"></div>
+      <div class="track-fill" id="timeline-fill"></div>
+      <input type="range" id="timeline-start" min="0" max="1" value="0" />
+      <input type="range" id="timeline-end" min="0" max="1" value="1" />
+    </div>
+    <div class="range-labels">
+      <span id="range-label-start">Jan 2017</span>
+      <span id="range-label-end">Mar 2026</span>
+    </div>
+  </div>
+
+  <div class="slider-section">
+    <label>Price Range</label>
+    <div id="price-display" class="range-display">$0 – $1.6M+</div>
+    <div class="dual-slider" id="price-slider">
+      <div class="track"></div>
+      <div class="track-fill" id="price-fill"></div>
+      <input type="range" id="price-start" min="0" max="32" value="0" />
+      <input type="range" id="price-end" min="0" max="32" value="32" />
+    </div>
+    <div class="range-labels">
+      <span>$0</span>
+      <span>$1.6M+</span>
+    </div>
+  </div>
+
+  <div class="filter-section">
+    <label class="section-label">Flat Type</label>
+    <div class="checkbox-group" id="flat-type-filters"></div>
+  </div>
+
+  <div id="stats"></div>
+  </div>
+</div>
+
+<div id="detail-panel">
+  <div class="detail-header">
+    <button class="detail-close" onclick="closeDetail()">&times;</button>
+    <h3 id="detail-title"></h3>
+    <div class="subtitle" id="detail-subtitle"></div>
+  </div>
+  <div class="detail-summary" id="detail-summary"></div>
+  <div class="detail-body" id="detail-body"></div>
+</div>
+
+<div id="legend">
+  <div class="title">Avg Resale Price</div>
+  <div class="legend-bar"></div>
+  <div class="legend-labels">
+    <span>$150K</span>
+    <span>$500K</span>
+    <span>$900K</span>
+    <span>$1.3M+</span>
+  </div>
+</div>
+
+<script>
+const FLAT_TYPES = ['1 ROOM','2 ROOM','3 ROOM','4 ROOM','5 ROOM','EXECUTIVE','MULTI-GENERATION'];
+const PRICE_MIN = 150000;
+const PRICE_MAX = 1300000;
+
+let allData = null;
+let allMonths = [];
+let filteredMonths = []; // subset based on start/end selection
+let activeFlatTypes = new Set(FLAT_TYPES);
+let priceFilter = { min: 0, max: Infinity };
+let map = null;
+let playing = false;
+let playInterval = null;
+
+let blockIndex = [];  // { block, street, town, coords }
+let txData = null;    // transactions.json: { "BLOCK|STREET": [...] }
+
+function getSavedToken() {
+  return localStorage.getItem('mapbox_token') || '';
+}
+
+function initWithToken() {
+  const token = document.getElementById('token-input').value.trim();
+  if (!token.startsWith('pk.')) {
+    alert('Please enter a valid Mapbox public token (starts with pk.)');
+    return;
+  }
+  localStorage.setItem('mapbox_token', token);
+  document.getElementById('token-prompt').style.display = 'none';
+  initMap(token);
+}
+
+// Auto-start if token saved in localStorage
+(function() {
+  const saved = getSavedToken();
+  if (saved) {
+    document.getElementById('token-prompt').style.display = 'none';
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => initMap(saved));
+    } else {
+      initMap(saved);
+    }
+  } else {
+    document.getElementById('token-input').value = '';
+  }
+})();
+
+function initMap(token) {
+  mapboxgl.accessToken = token;
+
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/dark-v11',
+    center: [103.8198, 1.3521],
+    zoom: 11.2,
+    minZoom: 10,
+    maxZoom: 18,
+  });
+
+  map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+
+  map.on('load', () => {
+    document.getElementById('loading').style.display = 'flex';
+    Promise.all([
+      fetch('data.json').then(r => r.json()),
+      fetch('transactions.json').then(r => r.json()),
+      fetch('planning_areas.json').then(r => r.json()),
+    ]).then(([data, tx, regions]) => {
+      allData = data;
+      txData = tx;
+      buildSearchIndex();
+      setupControls();
+      setupSearch();
+      addRegionLayer(regions);
+      addMapLayers();
+      updateMap();
+      document.getElementById('loading').style.display = 'none';
+      // Auto-collapse panel on mobile
+      if (window.innerWidth <= 600) {
+        toggleControls();
+      }
+    });
+  });
+}
+
+function buildSearchIndex() {
+  // Build unique block entries with their coordinates
+  const seen = new Map();
+  allData.features.forEach(f => {
+    const p = f.properties;
+    const key = `${p.block}|${p.street}`;
+    if (!seen.has(key)) {
+      seen.set(key, {
+        block: p.block,
+        street: p.street,
+        town: p.town,
+        label: `BLK ${p.block} ${p.street}`,
+        coords: f.geometry.coordinates,
+      });
+    }
+  });
+  blockIndex = Array.from(seen.values()).sort((a, b) => {
+    const cmp = a.street.localeCompare(b.street);
+    return cmp !== 0 ? cmp : a.block.localeCompare(b.block);
+  });
+}
+
+function setupSearch() {
+  const input = document.getElementById('search-input');
+  const results = document.getElementById('search-results');
+
+  input.addEventListener('input', () => {
+    const query = input.value.trim().toUpperCase().replace(/^BLK\s*/i, '');
+    if (query.length < 2) {
+      results.style.display = 'none';
+      return;
+    }
+
+    const matches = blockIndex.filter(s =>
+      s.label.includes(query) || s.town.includes(query) ||
+      s.block === query || s.street.includes(query)
+    ).slice(0, 25);
+
+    if (matches.length === 0) {
+      results.style.display = 'none';
+      return;
+    }
+
+    results.innerHTML = matches.map((m, i) =>
+      `<div class="search-item" data-idx="${i}">
+        <span class="street">${highlightMatch(m.label, query)}</span>
+        <span class="town">${m.town}</span>
+      </div>`
+    ).join('');
+    results.style.display = 'block';
+
+    // Store current matches for Enter key
+    input._matches = matches;
+
+    results.querySelectorAll('.search-item').forEach((el, i) => {
+      el.addEventListener('click', () => {
+        selectSearchResult(matches[i]);
+      });
+    });
+  });
+
+  // Enter key selects first result and opens detail panel
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const matches = input._matches;
+      if (matches && matches.length > 0) {
+        selectSearchResult(matches[0]);
+      }
+    }
+  });
+
+  input.addEventListener('focus', () => {
+    if (input.value.trim().length >= 2) {
+      input.dispatchEvent(new Event('input'));
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-section')) {
+      results.style.display = 'none';
+    }
+  });
+}
+
+function selectSearchResult(m) {
+  const input = document.getElementById('search-input');
+  const results = document.getElementById('search-results');
+  input.value = `${m.label} (${titleCase(m.town)})`;
+  results.style.display = 'none';
+  map.flyTo({ center: m.coords, zoom: 16, duration: 1500 });
+  // Open detail panel for this block with full history
+  openDetail(m.block, m.street, m.town, null);
+}
+
+function highlightMatch(text, query) {
+  const idx = text.toUpperCase().indexOf(query.toUpperCase());
+  if (idx === -1) return text;
+  return text.slice(0, idx) +
+    '<strong style="color:#e63946">' + text.slice(idx, idx + query.length) + '</strong>' +
+    text.slice(idx + query.length);
+}
+
+function titleCase(str) {
+  return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// Price slider: 33 steps, each = $50K
+const PRICE_STEP = 50000;
+const PRICE_STEPS = 33; // 0 to 32 → $0 to $1.6M+
+
+function priceFromStep(step) {
+  return step * PRICE_STEP;
+}
+
+function formatPrice(val) {
+  if (val >= 1600000) return '$1.6M+';
+  if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;
+  return `$${(val / 1000).toFixed(0)}K`;
+}
+
+function setupControls() {
+  const monthSet = new Set();
+  allData.features.forEach(f => monthSet.add(f.properties.month));
+  allMonths = Array.from(monthSet).sort();
+  filteredMonths = [...allMonths];
+
+  // Timeline dual slider
+  const tStart = document.getElementById('timeline-start');
+  const tEnd = document.getElementById('timeline-end');
+  tStart.max = allMonths.length - 1;
+  tEnd.max = allMonths.length - 1;
+  tStart.value = 0;
+  tEnd.value = allMonths.length - 1;
+
+  tStart.addEventListener('input', () => {
+    if (parseInt(tStart.value) > parseInt(tEnd.value)) tStart.value = tEnd.value;
+    updateTimelineRange();
+  });
+  tEnd.addEventListener('input', () => {
+    if (parseInt(tEnd.value) < parseInt(tStart.value)) tEnd.value = tStart.value;
+    updateTimelineRange();
+  });
+
+  // Price dual slider
+  const pStart = document.getElementById('price-start');
+  const pEnd = document.getElementById('price-end');
+  pStart.addEventListener('input', () => {
+    if (parseInt(pStart.value) > parseInt(pEnd.value)) pStart.value = pEnd.value;
+    updatePriceRange();
+  });
+  pEnd.addEventListener('input', () => {
+    if (parseInt(pEnd.value) < parseInt(pStart.value)) pEnd.value = pStart.value;
+    updatePriceRange();
+  });
+
+  // Initial display update (don't call updateMap yet — source not added)
+  updateTimelineDisplay();
+  updatePriceDisplay();
+
+  // Flat type chips
+  const container = document.getElementById('flat-type-filters');
+  FLAT_TYPES.forEach(ft => {
+    const chip = document.createElement('span');
+    chip.className = 'chip active';
+    chip.textContent = ft;
+    chip.dataset.type = ft;
+    chip.addEventListener('click', () => {
+      if (activeFlatTypes.has(ft)) {
+        activeFlatTypes.delete(ft);
+        chip.classList.remove('active');
+      } else {
+        activeFlatTypes.add(ft);
+        chip.classList.add('active');
+      }
+      updateMap();
+    });
+    container.appendChild(chip);
+  });
+}
+
+function updateTimelineDisplay() {
+  const tStart = document.getElementById('timeline-start');
+  const tEnd = document.getElementById('timeline-end');
+  const si = parseInt(tStart.value);
+  const ei = parseInt(tEnd.value);
+
+  filteredMonths = allMonths.slice(si, ei + 1);
+  if (filteredMonths.length === 0) filteredMonths = [...allMonths];
+
+  const startLabel = formatMonth(allMonths[si]);
+  const endLabel = formatMonth(allMonths[ei]);
+  document.getElementById('month-display').textContent = `${startLabel} – ${endLabel}`;
+  document.getElementById('range-label-start').textContent = startLabel;
+  document.getElementById('range-label-end').textContent = endLabel;
+
+  const pct1 = (si / (allMonths.length - 1)) * 100;
+  const pct2 = (ei / (allMonths.length - 1)) * 100;
+  const fill = document.getElementById('timeline-fill');
+  fill.style.left = pct1 + '%';
+  fill.style.width = (pct2 - pct1) + '%';
+}
+
+function updateTimelineRange() {
+  updateTimelineDisplay();
+  updateMap();
+}
+
+function updatePriceDisplay() {
+  const pStart = document.getElementById('price-start');
+  const pEnd = document.getElementById('price-end');
+  const minVal = parseInt(pStart.value);
+  const maxVal = parseInt(pEnd.value);
+
+  priceFilter.min = priceFromStep(minVal);
+  priceFilter.max = maxVal >= PRICE_STEPS - 1 ? Infinity : priceFromStep(maxVal + 1);
+
+  const minLabel = formatPrice(priceFromStep(minVal));
+  const maxLabel = maxVal >= PRICE_STEPS - 1 ? '$1.6M+' : formatPrice(priceFromStep(maxVal + 1));
+  document.getElementById('price-display').textContent = `${minLabel} – ${maxLabel}`;
+
+  const pct1 = (minVal / PRICE_STEPS) * 100;
+  const pct2 = (maxVal / PRICE_STEPS) * 100;
+  const fill = document.getElementById('price-fill');
+  fill.style.left = pct1 + '%';
+  fill.style.width = (pct2 - pct1) + '%';
+}
+
+function updatePriceRange() {
+  updatePriceDisplay();
+  updateMap();
+}
+
+// Map HDB town names to planning area names
+const TOWN_TO_AREA = {
+  'KALLANG/WHAMPOA': 'KALLANG',
+  'CENTRAL AREA': 'DOWNTOWN CORE',
+};
+
+function getAreaName(town) {
+  return TOWN_TO_AREA[town] || town;
+}
+
+function computeRegionPrices() {
+  // Compute avg price per planning area from currently visible data
+  const monthSet = new Set(filteredMonths);
+  const areaStats = {};
+
+  allData.features.forEach(f => {
+    const p = f.properties;
+    if (!monthSet.has(p.month) || !activeFlatTypes.has(p.flat_type)) return;
+    if (p.avg_price < priceFilter.min || p.avg_price > priceFilter.max) return;
+
+    const area = getAreaName(p.town);
+    if (!areaStats[area]) areaStats[area] = { total: 0, count: 0, txCount: 0 };
+    areaStats[area].total += p.avg_price * p.count;
+    areaStats[area].count += p.count;
+    areaStats[area].txCount += p.count;
+  });
+
+  const result = {};
+  for (const [area, s] of Object.entries(areaStats)) {
+    result[area] = { avg: Math.round(s.total / s.count), txCount: s.txCount };
+  }
+  return result;
+}
+
+function addRegionLayer(regions) {
+  // Add planning area boundaries source
+  map.addSource('regions', {
+    type: 'geojson',
+    data: regions,
+  });
+
+  // Filled choropleth — visible at low zoom
+  map.addLayer({
+    id: 'region-fill',
+    type: 'fill',
+    source: 'regions',
+    maxzoom: 13,
+    paint: {
+      'fill-color': '#888',
+      'fill-opacity': [
+        'interpolate', ['linear'], ['zoom'],
+        10, 0.6,
+        12.5, 0.4,
+        13, 0,
+      ],
+    },
+  });
+
+  // Region borders
+  map.addLayer({
+    id: 'region-border',
+    type: 'line',
+    source: 'regions',
+    maxzoom: 13,
+    paint: {
+      'line-color': 'rgba(255,255,255,0.3)',
+      'line-width': 1,
+    },
+  });
+
+  // Region name labels
+  map.addLayer({
+    id: 'region-labels',
+    type: 'symbol',
+    source: 'regions',
+    maxzoom: 13,
+    layout: {
+      'text-field': ['get', 'PLN_AREA_N'],
+      'text-size': 11,
+      'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+      'text-allow-overlap': false,
+    },
+    paint: {
+      'text-color': '#fff',
+      'text-halo-color': 'rgba(0,0,0,0.6)',
+      'text-halo-width': 1,
+    },
+  });
+
+  const tooltip = document.getElementById('hover-tooltip');
+
+  // Hover on regions
+  map.on('mousemove', 'region-fill', (e) => {
+    if (e.features.length === 0) return;
+    map.getCanvas().style.cursor = 'pointer';
+    const area = e.features[0].properties.PLN_AREA_N;
+    const prices = computeRegionPrices();
+    const stats = prices[area];
+
+    if (stats) {
+      tooltip.innerHTML = `
+        <div class="tt-block">${area}</div>
+        <div class="tt-price">Avg $${stats.avg.toLocaleString()}</div>
+        <div class="tt-info">${stats.txCount.toLocaleString()} transactions · click to zoom</div>
+      `;
+    } else {
+      tooltip.innerHTML = `
+        <div class="tt-block">${area}</div>
+        <div class="tt-info">No HDB data</div>
+      `;
+    }
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.point.x + 14) + 'px';
+    tooltip.style.top = (e.point.y - 14) + 'px';
+  });
+
+  map.on('mouseleave', 'region-fill', () => {
+    map.getCanvas().style.cursor = '';
+    tooltip.style.display = 'none';
+  });
+
+  // Click region to zoom in
+  map.on('click', 'region-fill', (e) => {
+    if (e.features.length === 0) return;
+    const bbox = e.features[0].geometry;
+    // Zoom to the region
+    const coords = bbox.type === 'Polygon' ? bbox.coordinates[0] :
+                   bbox.type === 'MultiPolygon' ? bbox.coordinates[0][0] : null;
+    if (coords) {
+      const lngs = coords.map(c => c[0]);
+      const lats = coords.map(c => c[1]);
+      map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 40, duration: 1200 }
+      );
+    }
+  });
+}
+
+function updateRegionColors() {
+  if (!map.getLayer('region-fill')) return;
+  const prices = computeRegionPrices();
+
+  // Build a match expression for fill colors
+  const colorExpr = ['match', ['get', 'PLN_AREA_N']];
+  for (const [area, stats] of Object.entries(prices)) {
+    const p = stats.avg;
+    // Map price to color
+    let color;
+    if (p < 350000) color = '#4575b4';
+    else if (p < 450000) color = '#74add1';
+    else if (p < 550000) color = '#abd9e9';
+    else if (p < 650000) color = '#fee090';
+    else if (p < 750000) color = '#fdae61';
+    else if (p < 900000) color = '#f46d43';
+    else if (p < 1100000) color = '#d73027';
+    else color = '#a50026';
+    colorExpr.push(area, color);
+  }
+  colorExpr.push('rgba(50,50,50,0.3)'); // default for areas with no data
+
+  map.setPaintProperty('region-fill', 'fill-color', colorExpr);
+}
+
+function addMapLayers() {
+  map.addSource('hdb-data', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+    cluster: true,
+    clusterMaxZoom: 14,
+    clusterRadius: 50,
+    clusterProperties: {
+      'sum_price': ['+', ['get', 'avg_price']],
+      'sum_count': ['+', ['get', 'count']],
+    },
+  });
+
+  // Clustered circles — only visible after regions fade out
+  map.addLayer({
+    id: 'hdb-clusters',
+    type: 'circle',
+    source: 'hdb-data',
+    filter: ['has', 'point_count'],
+    minzoom: 13,
+    paint: {
+      'circle-radius': [
+        'interpolate', ['linear'], ['get', 'point_count'],
+        2, 18,
+        20, 30,
+        100, 45,
+        500, 60,
+      ],
+      'circle-color': [
+        'interpolate', ['linear'],
+        ['/', ['get', 'sum_price'], ['get', 'point_count']],
+        PRICE_MIN, '#4575b4',
+        350000,    '#74add1',
+        500000,    '#abd9e9',
+        650000,    '#fee090',
+        800000,    '#fdae61',
+        950000,    '#f46d43',
+        1100000,   '#d73027',
+        PRICE_MAX, '#a50026',
+      ],
+      'circle-opacity': 0.9,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': 'rgba(255,255,255,0.5)',
+    },
+  });
+
+  // Cluster count label
+  map.addLayer({
+    id: 'hdb-cluster-count',
+    type: 'symbol',
+    source: 'hdb-data',
+    filter: ['has', 'point_count'],
+    minzoom: 13,
+    layout: {
+      'text-field': '{point_count_abbreviated}',
+      'text-size': 12,
+      'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+    },
+    paint: {
+      'text-color': '#fff',
+    },
+  });
+
+  // Individual (unclustered) block circles
+  map.addLayer({
+    id: 'hdb-points',
+    type: 'circle',
+    source: 'hdb-data',
+    filter: ['!', ['has', 'point_count']],
+    minzoom: 13,
+    paint: {
+      'circle-radius': [
+        'interpolate', ['linear'], ['zoom'],
+        13, 6,
+        16, 12,
+        18, 16,
+      ],
+      'circle-color': [
+        'interpolate', ['linear'], ['get', 'avg_price'],
+        PRICE_MIN, '#4575b4',
+        350000,    '#74add1',
+        500000,    '#abd9e9',
+        650000,    '#fee090',
+        800000,    '#fdae61',
+        950000,    '#f46d43',
+        1100000,   '#d73027',
+        PRICE_MAX, '#a50026',
+      ],
+      'circle-stroke-color': '#fff',
+      'circle-stroke-width': 1.5,
+      'circle-opacity': 0.9,
+    },
+  });
+
+  // Price labels at high zoom
+  map.addLayer({
+    id: 'hdb-price-labels',
+    type: 'symbol',
+    source: 'hdb-data',
+    filter: ['!', ['has', 'point_count']],
+    minzoom: 15.5,
+    layout: {
+      'text-field': ['concat', '$',
+        ['number-format', ['/', ['get', 'avg_price'], 1000], { 'max-fraction-digits': 0 }],
+        'K'
+      ],
+      'text-size': 10,
+      'text-offset': [0, -1.6],
+      'text-allow-overlap': false,
+      'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+    },
+    paint: {
+      'text-color': '#fff',
+      'text-halo-color': 'rgba(26,26,46,0.85)',
+      'text-halo-width': 1.5,
+    },
+  });
+
+  const tooltip = document.getElementById('hover-tooltip');
+
+  // Hover on individual points
+  map.on('mousemove', 'hdb-points', (e) => {
+    if (e.features.length === 0) return;
+    map.getCanvas().style.cursor = 'pointer';
+    const p = e.features[0].properties;
+    tooltip.innerHTML = `
+      <div class="tt-block">BLK ${p.block} ${p.street}</div>
+      <div class="tt-town">${p.town}</div>
+      <div class="tt-price">$${Number(p.avg_price).toLocaleString()}</div>
+      <div class="tt-info">${p.flat_type} · ${p.count} tx</div>
+    `;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.point.x + 14) + 'px';
+    tooltip.style.top = (e.point.y - 14) + 'px';
+  });
+  map.on('mouseleave', 'hdb-points', () => {
+    map.getCanvas().style.cursor = '';
+    tooltip.style.display = 'none';
+  });
+
+  // Hover on clusters — show summary
+  map.on('mousemove', 'hdb-clusters', (e) => {
+    if (e.features.length === 0) return;
+    map.getCanvas().style.cursor = 'pointer';
+    const p = e.features[0].properties;
+    const avgPrice = Math.round(p.sum_price / p.point_count);
+    tooltip.innerHTML = `
+      <div class="tt-block">${p.point_count} blocks</div>
+      <div class="tt-price">Avg $${avgPrice.toLocaleString()}</div>
+      <div class="tt-info">${p.sum_count} total transactions · click to zoom</div>
+    `;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.point.x + 14) + 'px';
+    tooltip.style.top = (e.point.y - 14) + 'px';
+  });
+  map.on('mouseleave', 'hdb-clusters', () => {
+    map.getCanvas().style.cursor = '';
+    tooltip.style.display = 'none';
+  });
+
+  // Click cluster to zoom in
+  map.on('click', 'hdb-clusters', (e) => {
+    const features = map.queryRenderedFeatures(e.point, { layers: ['hdb-clusters'] });
+    const clusterId = features[0].properties.cluster_id;
+    map.getSource('hdb-data').getClusterExpansionZoom(clusterId, (err, zoom) => {
+      if (err) return;
+      map.easeTo({ center: features[0].geometry.coordinates, zoom: zoom + 1 });
+    });
+  });
+
+  // Click individual point to open detail
+  map.on('click', 'hdb-points', (e) => {
+    if (e.features.length === 0) return;
+    const p = e.features[0].properties;
+    openDetail(p.block, p.street, p.town, p.flat_type);
+  });
+}
+
+function updateMap() {
+  const monthSet = new Set(filteredMonths);
+
+  // Show the latest month's data within the range for the heatmap
+  // But aggregate: for each block, pick the latest month in range that has data
+  const blockLatest = new Map();
+  allData.features.forEach(f => {
+    const p = f.properties;
+    if (!monthSet.has(p.month) || !activeFlatTypes.has(p.flat_type)) return;
+    if (p.avg_price < priceFilter.min || p.avg_price > priceFilter.max) return;
+
+    const key = `${p.block}|${p.street}|${p.flat_type}`;
+    const existing = blockLatest.get(key);
+    if (!existing || p.month > existing.properties.month) {
+      blockLatest.set(key, f);
+    }
+  });
+
+  const filtered = Array.from(blockLatest.values());
+
+  map.getSource('hdb-data').setData({
+    type: 'FeatureCollection',
+    features: filtered,
+  });
+
+  updateStats(filtered);
+  updateRegionColors();
+}
+
+function updateStats(features) {
+  if (features.length === 0) {
+    document.getElementById('stats').innerHTML = '<em>No data for this selection</em>';
+    return;
+  }
+
+  const prices = features.map(f => f.properties.avg_price);
+  const totalTx = features.reduce((s, f) => s + f.properties.count, 0);
+  const avgPrice = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+
+  document.getElementById('stats').innerHTML = `
+    <strong>${totalTx.toLocaleString()}</strong> transactions across <strong>${features.length}</strong> blocks<br>
+    Avg: <strong>$${avgPrice.toLocaleString()}</strong> &nbsp;|&nbsp;
+    Low: $${minPrice.toLocaleString()} &nbsp;|&nbsp;
+    High: $${maxPrice.toLocaleString()}
+  `;
+}
+
+function formatMonth(m) {
+  const [year, month] = m.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[parseInt(month) - 1]} ${year}`;
+}
+
+function togglePlay() {
+  const btn = document.getElementById('play-btn');
+  const tStart = document.getElementById('timeline-start');
+  const tEnd = document.getElementById('timeline-end');
+
+  if (playing) {
+    clearInterval(playInterval);
+    playing = false;
+    btn.textContent = 'Play';
+    btn.classList.remove('playing');
+  } else {
+    playing = true;
+    btn.textContent = 'Pause';
+    btn.classList.add('playing');
+
+    // Animate: keep start fixed, sweep end from start to max
+    const startIdx = parseInt(tStart.value);
+    let currentEnd = startIdx;
+    tEnd.value = currentEnd;
+    updateTimelineRange();
+
+    playInterval = setInterval(() => {
+      currentEnd++;
+      if (currentEnd > parseInt(tEnd.max)) {
+        togglePlay();
+        return;
+      }
+      tEnd.value = currentEnd;
+      updateTimelineRange();
+    }, 150);
+  }
+}
+
+function openDetail(block, street, town, flatType) {
+  const panel = document.getElementById('detail-panel');
+  const key = `${block}|${street}`;
+
+  document.getElementById('detail-title').textContent = `BLK ${block} ${street}`;
+  document.getElementById('detail-subtitle').textContent =
+    `${titleCase(town)} — All Transactions (2017–2026)` +
+    (flatType ? ` — ${flatType}` : '');
+
+  const allTx = txData[key] || [];
+
+  // Filter by active flat types only (show ALL months)
+  let filtered = allTx.filter(tx => activeFlatTypes.has(tx.ft));
+  if (flatType) {
+    filtered = filtered.filter(tx => tx.ft === flatType);
+  }
+
+  // Sort by date descending, then price descending
+  filtered.sort((a, b) => {
+    const mc = b.m.localeCompare(a.m);
+    return mc !== 0 ? mc : b.p - a.p;
+  });
+
+  // Summary
+  if (filtered.length > 0) {
+    const prices = filtered.map(t => t.p);
+    const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    document.getElementById('detail-summary').innerHTML =
+      `<strong>${filtered.length}</strong> transaction${filtered.length > 1 ? 's' : ''} total &nbsp;|&nbsp; ` +
+      `Avg: <strong>$${avg.toLocaleString()}</strong> &nbsp;|&nbsp; ` +
+      `Range: $${min.toLocaleString()} – $${max.toLocaleString()}`;
+  } else {
+    document.getElementById('detail-summary').innerHTML =
+      'No transactions for this block';
+  }
+
+  // Build table grouped by month
+  const body = document.getElementById('detail-body');
+  if (filtered.length === 0) {
+    body.innerHTML = '<div class="detail-empty">No transactions found for this block.</div>';
+  } else {
+    // Group by month for section headers
+    let html = '<table class="tx-table"><thead><tr>' +
+      '<th>Month</th><th>Type</th><th>Storey</th><th>Area</th><th>Price</th><th>Model</th>' +
+      '</tr></thead><tbody>';
+    let lastMonth = '';
+    filtered.forEach(tx => {
+      const showMonth = tx.m !== lastMonth;
+      lastMonth = tx.m;
+      html += `<tr>
+        <td style="${showMonth ? 'font-weight:700;color:#1a1a2e' : 'color:#ccc;font-size:10px'}">${showMonth ? formatMonth(tx.m) : '↳'}</td>
+        <td>${tx.ft}</td>
+        <td>${tx.sr}</td>
+        <td>${tx.a} sqm</td>
+        <td class="tx-price">$${tx.p.toLocaleString()}</td>
+        <td>${tx.fm}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+
+    // Vicinity: find nearby blocks and their avg prices for current month
+    const selectedMonth = filteredMonths[filteredMonths.length - 1] || allMonths[allMonths.length - 1];
+    const thisCoords = blockIndex.find(b => b.block === block && b.street === street)?.coords;
+    let vicinityHtml = '';
+    if (thisCoords) {
+      const nearby = blockIndex
+        .filter(b => !(b.block === block && b.street === street))
+        .map(b => {
+          const d = Math.sqrt((b.coords[0] - thisCoords[0]) ** 2 + (b.coords[1] - thisCoords[1]) ** 2);
+          return { ...b, dist: d };
+        })
+        .filter(b => b.dist < 0.005) // ~500m radius
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 15);
+
+      // Get avg price for each nearby block in current month
+      const nearbyWithPrices = nearby.map(nb => {
+        const nbKey = `${nb.block}|${nb.street}`;
+        const nbTx = (txData[nbKey] || []).filter(tx =>
+          tx.m === selectedMonth && activeFlatTypes.has(tx.ft)
+        );
+        if (nbTx.length === 0) return null;
+        const avg = Math.round(nbTx.reduce((s, t) => s + t.p, 0) / nbTx.length);
+        return { ...nb, avgPrice: avg, txCount: nbTx.length };
+      }).filter(Boolean);
+
+      if (nearbyWithPrices.length > 0) {
+        vicinityHtml = `
+          <div class="vicinity-section">
+            <h4>Nearby Blocks — ${formatMonth(selectedMonth)}</h4>
+            <div class="vicinity-list">
+              ${nearbyWithPrices.map(nb => `
+                <div class="vicinity-item" onclick="openDetail('${nb.block}','${nb.street}','${nb.town}',null)">
+                  <span class="vi-label">BLK ${nb.block} ${nb.street}</span>
+                  <span>
+                    <span class="vi-price">$${nb.avgPrice.toLocaleString()}</span>
+                    <span class="vi-count">(${nb.txCount})</span>
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    body.innerHTML = vicinityHtml + html;
+  }
+
+  panel.classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+}
+
+function toggleControls() {
+  const panel = document.getElementById('controls');
+  const btn = document.getElementById('toggle-btn');
+  panel.classList.toggle('collapsed');
+  btn.innerHTML = panel.classList.contains('collapsed') ? '&#x2630;' : '&#x2212;';
+  btn.title = panel.classList.contains('collapsed') ? 'Expand panel' : 'Minimize panel';
+  // Resize map after transition
+  setTimeout(() => map.resize(), 300);
+}
+</script>
+</body>
+</html>
